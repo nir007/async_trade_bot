@@ -1,11 +1,11 @@
 import os
 import asyncio
 import http.client
-import requests
 import json
 from dotenv import load_dotenv
 from math import fabs
 import sys
+import time
 from aiohttp import ClientSession, TCPConnector
 from aiohttp_socks import ProxyConnector
 
@@ -25,47 +25,50 @@ class TradeBot:
         self.__coins = coins
 
     async def get_price_from_binance(self, *, url, file_name: str):
+        start = time.time()
         res = []
-        resp = requests.get(url)
 
-        if resp.status_code != http.client.OK:
-            raise RuntimeError(f"Bad response code: {resp.status_code}")
+        async with self.__session.get(url) as resp:
+            if resp.status != http.client.OK:
+                raise RuntimeError(f"Bad response code: {resp.status}")
 
-        print(f"Request to binance: {resp.elapsed.total_seconds():.3f} seconds")
+            content = await resp.json()
 
-        content = resp.json()
+            for symbol in self.__coins:
+                for token in content:
+                    if f"{symbol}USDT" == token.get("symbol"):
+                        res.append({
+                            "symbol": symbol,
+                            "price": token.get("price")
+                        })
 
-        for symbol in self.__coins:
-            for token in content:
-                if f"{symbol}USDT" == token.get("symbol"):
-                    res.append({
-                        "symbol": symbol,
-                        "price": token.get("price")
-                    })
+            self.__write_to_file(file_name=file_name, data=res)
 
-        self.__write_to_file(file_name=file_name, data=res)
-
+        end = time.time()
+        print(f"Request to binance: {end - start:.3f} seconds")
 
     async def get_price_from_kukoin(self, *, url: str, file_name: str):
         res = []
-        resp = requests.get(url)
+        start = time.time()
 
-        if resp.status_code != http.client.OK:
-            raise RuntimeError(f"Bad response code: {resp.status_code}")
+        async with self.__session.get(url) as resp:
+            if resp.status != http.client.OK:
+                raise RuntimeError(f"Bad response code: {resp.status}")
 
-        print(f"Request to kukoin: {resp.elapsed.total_seconds():.3f} seconds")
+            content = await resp.json()
 
-        content = resp.json()
+            for symbol in self.__coins:
+                for token in content["data"]["ticker"]:
+                    if f"{symbol}-USDT" == token['symbol']:
+                        res.append({
+                            "symbol": symbol,
+                            "price": token["last"]
+                        })
 
-        for symbol in self.__coins:
-            for token in content["data"]["ticker"]:
-                if f"{symbol}-USDT" == token['symbol']:
-                    res.append({
-                        "symbol": symbol,
-                        "price": token["last"]
-                    })
+            self.__write_to_file(file_name=file_name, data=res)
 
-        self.__write_to_file(file_name=file_name, data=res)
+        end = time.time()
+        print(f"Request to kukoin: {end - start:.3f} seconds")
 
     def __write_to_file(self, file_name: str, data: any):
         with open(file_name, "w") as file:
@@ -115,7 +118,7 @@ async def main():
                             print(f"Покупка: {k.get('price')}$")
                             print(f"Продажа: {b.get('price')}$")
 
-                        print(f"Профит: {fabs(float(k.get('price')) - float(b.get('price')))}$")
+                        print(f"Профит: {fabs(float(k.get('price')) - float(b.get('price'))):.4f}$")
     except Exception as e:
         _, _, exc_tb = sys.exc_info()
         print(f"Something went wrong on line {exc_tb.tb_lineno}: {e}")
